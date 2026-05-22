@@ -593,7 +593,7 @@
             <div class="grafico">
                 <canvas id="graficoFinanceiro"></canvas>
             </div>
-            <p style="text-align:center; font-size:11px; color:#666; margin-top:10px;">📊 Área laranja = Despesas | Linha vermelha pontilhada = Desconto | Linha azul = Realizado</p>
+            <p style="text-align:center; font-size:11px; color:#666; margin-top:10px;">📊 Área laranja = Despesas | Linha vermelha pontilhada = Desconto (calculado sobre Previsto+Reajuste) | Linha azul = Realizado</p>
         </div>
         <div class="grafico-wrapper">
             <h3>📈 Realizado vs Previsto (Acumulado)</h3>
@@ -644,7 +644,7 @@
             <span>📌 Barra de progresso: valor ACUMULADO da coluna REALIZADO apenas de medições com status = PAGO</span><br>
             <span>📊 Total de Despesas + Descontos: soma das despesas + descontos (apenas medições com status = PAGO)</span><br>
             <span>⭐ NDG (Nota de Desempenho): 0-100</span><br>
-            <span>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%</span><br>
+            <span>🎯 Desconto: calculado sobre PREVISTO + REAJUSTE | ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%</span><br>
             <span>🔍 Clique nos cards para filtrar por status</span><br>
             <span>💾 As alterações são salvas automaticamente no navegador</span>
             <div class="valor-previsto-mensal">
@@ -701,23 +701,18 @@ function somarRealizadoPagoAteAno(ano) {
 }
 // ============================================================================================================
 
-// ==================== FUNÇÕES PARA CÁLCULO DO TOTAL DE DESPESAS + DESCONTOS ====================
-function calcularTotalDespesasMaisDescontos() {
-    var totalDespesas = 0;
-    var totalDescontos = 0;
-    for (var i = 0; i < dados.length; i++) {
-        var temDataValida = dados[i].data && dados[i].data !== '' && isDataValida(dados[i].data);
-        var isPago = dados[i].status === 'pago';
-        if (temDataValida && isPago) {
-            totalDespesas += dados[i].despesa || 0;
-            var descPercent = getDescontoPorNDG(dados[i].ndg || 100);
-            var valorDesconto = (dados[i].realizado || 0) * (descPercent / 100);
-            totalDescontos += valorDesconto;
-        }
-    }
-    return { despesas: totalDespesas, descontos: totalDescontos, total: totalDespesas + totalDescontos };
+// ==================== FUNÇÃO PARA CÁLCULO DO DESCONTO (baseado em PREVISTO + REAJUSTE) ====================
+function getValorBaseParaDesconto(item) {
+    // valor base = previsto + reajuste
+    return (item.previsto || 0) + (item.reaj || 0);
 }
-// ================================================================================================
+
+function getValorDesconto(item) {
+    var valorBase = getValorBaseParaDesconto(item);
+    var descPercent = getDescontoPorNDG(item.ndg || 100);
+    return valorBase * (descPercent / 100);
+}
+// ============================================================================================================
 
 function setChartType(type) {
     currentChartType = type;
@@ -1106,8 +1101,10 @@ function atualizarCards(filtrados) {
         stats[filtrados[i].status]++;
         if (filtrados[i].status === 'pago') {
             totalDespesas += filtrados[i].despesa || 0;
+            // Desconto calculado sobre previsto + reajuste
+            var valorBase = filtrados[i].previsto + (filtrados[i].reaj || 0);
             var descPercent = getDescontoPorNDG(filtrados[i].ndg || 100);
-            var valorDesconto = (filtrados[i].realizado || 0) * (descPercent / 100);
+            var valorDesconto = valorBase * (descPercent / 100);
             totalDescontos += valorDesconto;
         }
     }
@@ -1200,9 +1197,11 @@ function atualizarGraficoFinanceiro() {
     var realizados = dadosOrdenados.map(function(d) { return d.realizado; });
     var previstos = dadosOrdenados.map(function(d) { return d.previsto; });
     var despesas = dadosOrdenados.map(function(d) { return d.despesa || 0; });
+    // Desconto calculado sobre previsto + reajuste
     var descontos = dadosOrdenados.map(function(d) { 
+        var valorBase = (d.previsto || 0) + (d.reaj || 0);
         var descPercent = getDescontoPorNDG(d.ndg || 0);
-        return (d.realizado || 0) * (descPercent / 100);
+        return valorBase * (descPercent / 100);
     });
     
     var ctx = document.getElementById('graficoFinanceiro').getContext('2d');
@@ -1237,7 +1236,7 @@ function atualizarGraficoFinanceiro() {
                 pointBorderColor: 'white'
             },
             {
-                label: 'Desconto (R$)',
+                label: 'Desconto (R$) - base Previsto+Reaj',
                 data: descontos,
                 borderColor: '#dc3545',
                 backgroundColor: 'transparent',
@@ -1280,7 +1279,7 @@ function atualizarGraficoFinanceiro() {
                 borderWidth: 2
             },
             {
-                label: 'Desconto (R$)',
+                label: 'Desconto (R$) - base Previsto+Reaj',
                 data: descontos,
                 backgroundColor: 'rgba(220, 53, 69, 0.7)',
                 borderColor: '#dc3545',
@@ -1509,8 +1508,13 @@ function atualizarDiferenca(med) {
         ndgInput.value = ndg;
         ndgInput.className = 'ndg-input ' + getClassePorNDG(ndg);
         
+        // Buscar o reajuste atual
+        var reajInput = document.getElementById('reaj_' + med);
+        var reaj = reajInput ? parseFloat(reajInput.value.replace(/\./g,'').replace(',','.')) || 0 : 0;
+        var valorBase = valorPrevistoMensal + reaj;
+        
         var descPercent = getDescontoPorNDG(ndg);
-        var valorDesconto = realizado * (descPercent / 100);
+        var valorDesconto = valorBase * (descPercent / 100);
         descontoSpan.innerHTML = formatar(valorDesconto) + ' (' + descPercent + '%)';
         
         var valorPrevistoProporcional = valorPrevistoMensal * fator;
@@ -1525,7 +1529,7 @@ function renderizarTabela(filtrados) {
     
     tbody.innerHTML = '';
     if (filtrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13">Nenhum dado encontrado</td><\/tr>';
+        tbody.innerHTML = '<tr><td colspan="13">Nenhum dado encontrado<\/tr>';
         atualizarCards([]);
         return;
     }
@@ -1626,9 +1630,10 @@ function renderizarTabela(filtrados) {
         
         var cellDesconto = row.insertCell(10);
         var descontoSpan = document.createElement('span');
+        // Desconto calculado sobre previsto + reajuste
+        var valorBaseDesc = (valorPrevistoProporcional) + (isNaoIniciado ? 0 : (d.reaj || 0) * fator);
         var descPercent = getDescontoPorNDG(isNaoIniciado ? 0 : (d.ndg || 100));
-        var valorRealizadoCalc = isNaoIniciado ? 0 : ((d.realizado && d.realizado !== 0) ? d.realizado * fator : valorPrevistoProporcional);
-        var valorDesconto = valorRealizadoCalc * (descPercent / 100);
+        var valorDesconto = valorBaseDesc * (descPercent / 100);
         descontoSpan.innerHTML = formatar(valorDesconto) + ' (' + descPercent + '%)';
         descontoSpan.className = 'desconto-valor';
         descontoSpan.id = 'desconto_' + d.med;
@@ -1810,9 +1815,9 @@ function gerarApresentacao() {
 '<div class="kpi-grid" id="kpiGrid"></div>\n' +
 '<div class="filtros"><div class="filtro-group"><label>📅 Mês/Ano:</label><select id="filtroPeriodo" onchange="aplicarFiltros()">' + optionsMeses + '</select></div><div class="filtro-group"><label>📆 Ano:</label><select id="filtroAno" onchange="aplicarFiltros()">' + optionsAnos + '</select></div><div class="filtro-group"><label>🏷️ Status:</label><select id="filtroStatus" onchange="aplicarFiltros()"><option value="todos">Todos</option><option value="entregue">Entregue</option><option value="aprovado">Aprovado</option><option value="analise">Em Análise</option><option value="pagamento">Em Pagamento</option><option value="pago">Pago</option><option value="nao_iniciado">Não Iniciado</option></select></div><button class="btn-clear" onclick="limparFiltros()">🗑️ Limpar Filtros</button></div>\n' +
 '<div class="progress-card"><div class="progress-title"><h2>📈 MEDIÇÃO ACUMULADA</h2><div><span class="total-executado" id="totalExecutadoValor">R$ 0,00</span><span> / R$ 89.863.121,73</span></div></div><div class="progress-bar-container"><div class="progress-bar-fill" id="progressBarFill" style="width:0%;">0%</div></div><div class="progress-stats"><div class="stat-item"><div class="stat-label">Percentual Executado</div><div class="stat-value" id="percExecGrande">0%</div></div><div class="stat-item"><div class="stat-label">Total de Despesas + Descontos</div><div class="stat-value" id="totalDespGrande">R$ 0,00</div></div><div class="stat-item"><div class="stat-label">Saldo Restante</div><div class="stat-value" id="saldoRestante">R$ 0,00</div></div></div></div>\n' +
-'<div class="graficos-row"><div class="grafico-wrapper"><h3>💰 Evolução Financeira com Área de Despesas</h3><canvas id="graficoFinanceiro"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;">📊 Área laranja = Despesas | Linha vermelha pontilhada = Desconto | Linha azul = Realizado</p></div><div class="grafico-wrapper"><h3>📈 Realizado vs Previsto (Acumulado)</h3><canvas id="graficoAcumulado"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;" id="graficoLegenda">📊 Valores mensais (filtro específico) ou acumulados (visão geral) - Linha pontilhada = apenas PAGO</p></div></div>\n' +
+'<div class="graficos-row"><div class="grafico-wrapper"><h3>💰 Evolução Financeira com Área de Despesas</h3><canvas id="graficoFinanceiro"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;">📊 Área laranja = Despesas | Linha vermelha pontilhada = Desconto (calculado sobre Previsto+Reajuste) | Linha azul = Realizado</p></div><div class="grafico-wrapper"><h3>📈 Realizado vs Previsto (Acumulado)</h3><canvas id="graficoAcumulado"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;" id="graficoLegenda">📊 Valores mensais (filtro específico) ou acumulados (visão geral) - Linha pontilhada = apenas PAGO</p></div></div>\n' +
 '<div class="tabela-wrapper"><table id="tabela"><thead><tr><th>Med</th><th>Mês/Ano</th><th>Data</th><th>Previsto</th><th>Realizado</th><th>Diferença</th><th>Reajuste</th><th>Total Acumulado</th><th>Despesas</th><th>Descontos</th><th>Status</th><th>Obs</th></tr></thead><tbody id="tabelaBody"></tbody></table></div>\n' +
-'<div class="info-grid"><div class="info-box"><b>📋 LEGENDA</b><br><span class="badge badge-entregue">Entregue</span> Documentação<br><span class="badge badge-aprovado">Aprovado</span> Fiscalização<br><span class="badge badge-analise">Análise</span> Verificação<br><span class="badge badge-pagamento">Pagamento</span> Financeiro<br><span class="badge badge-pago">Pago</span> Creditado<br><span class="badge badge-nao-iniciado">Não Iniciado</span> Medição não realizada</div><div class="info-box"><b>ℹ️ INFORMAÇÕES</b><br>Período: 60 meses<br>💰 Valor Previsto por Mês: ' + valorPrevistoStr + '<br>📌 Barra: soma da coluna REALIZADO apenas de medições com status = PAGO<br>📊 Total de Despesas + Descontos: soma das despesas + descontos (apenas medições com status = PAGO)<br>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%<br>📺 Modo visualização</div></div>\n' +
+'<div class="info-grid"><div class="info-box"><b>📋 LEGENDA</b><br><span class="badge badge-entregue">Entregue</span> Documentação<br><span class="badge badge-aprovado">Aprovado</span> Fiscalização<br><span class="badge badge-analise">Análise</span> Verificação<br><span class="badge badge-pagamento">Pagamento</span> Financeiro<br><span class="badge badge-pago">Pago</span> Creditado<br><span class="badge badge-nao-iniciado">Não Iniciado</span> Medição não realizada</div><div class="info-box"><b>ℹ️ INFORMAÇÕES</b><br>Período: 60 meses<br>💰 Valor Previsto por Mês: ' + valorPrevistoStr + '<br>📌 Barra: soma da coluna REALIZADO apenas de medições com status = PAGO<br>📊 Total de Despesas + Descontos: soma das despesas + descontos (apenas medições com status = PAGO)<br>🎯 Desconto: calculado sobre PREVISTO + REAJUSTE | ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%<br>📺 Modo visualização</div></div>\n' +
 '</div>\n<script>\n' +
 'var dadosOriginais = ' + JSON.stringify(dadosOrdenados) + ';\n' +
 'var totalContrato = ' + totalContrato + ';\n' +
@@ -1841,8 +1846,9 @@ function gerarApresentacao() {
 '        stats[dadosFiltrados[i].status]++;\n' +
 '        if(dadosFiltrados[i].status === "pago"){\n' +
 '            totalDespesas += dadosFiltrados[i].despesa||0;\n' +
+'            var valorBase = dadosFiltrados[i].previsto + (dadosFiltrados[i].reaj || 0);\n' +
 '            var descPercent = getDescontoPorNDG(dadosFiltrados[i].ndg || 100);\n' +
-'            var valorDesconto = (dadosFiltrados[i].realizado || 0) * (descPercent / 100);\n' +
+'            var valorDesconto = valorBase * (descPercent / 100);\n' +
 '            totalDescontos += valorDesconto;\n' +
 '        }\n' +
 '    }\n' +
@@ -1890,20 +1896,20 @@ function gerarApresentacao() {
 '    var realizados = dadosFinanceiros.map(function(d){return d.realizado;});\n' +
 '    var previstos = dadosFinanceiros.map(function(d){return d.previsto;});\n' +
 '    var despesas = dadosFinanceiros.map(function(d){return d.despesa||0;});\n' +
-'    var descontos = dadosFinanceiros.map(function(d){var descPercent=getDescontoPorNDG(d.ndg||100); return (d.realizado||0)*(descPercent/100);});\n' +
+'    var descontos = dadosFinanceiros.map(function(d){var valorBase = d.previsto + (d.reaj || 0); var descPercent=getDescontoPorNDG(d.ndg||100); return valorBase*(descPercent/100);});\n' +
 '    var datasets = [];\n' +
 '    if("' + chartTypeToUse + '" === "line"){\n' +
 '        datasets = [\n' +
 '            {label:"Realizado (R$)",data:realizados,borderColor:"#17a2b8",backgroundColor:"rgba(23,162,184,0.05)",borderWidth:3,fill:false,pointRadius:5,pointBackgroundColor:"#17a2b8"},\n' +
 '            {label:"Despesas (R$) - Área",data:despesas,borderColor:"#fd7e14",backgroundColor:"rgba(253,126,20,0.3)",borderWidth:2,fill:true,pointRadius:4,pointBackgroundColor:"#fd7e14"},\n' +
-'            {label:"Desconto (R$)",data:descontos,borderColor:"#dc3545",backgroundColor:"transparent",borderWidth:2,borderDash:[8,4],fill:false,pointRadius:4,pointBackgroundColor:"#dc3545"},\n' +
+'            {label:"Desconto (R$) - base Previsto+Reaj",data:descontos,borderColor:"#dc3545",backgroundColor:"transparent",borderWidth:2,borderDash:[8,4],fill:false,pointRadius:4,pointBackgroundColor:"#dc3545"},\n' +
 '            {label:"Previsto (R$)",data:previstos,borderColor:"#6c757d",backgroundColor:"transparent",borderWidth:2,borderDash:[5,5],fill:false,pointRadius:3,pointBackgroundColor:"#6c757d"}\n' +
 '        ];\n' +
 '    } else {\n' +
 '        datasets = [\n' +
 '            {label:"Realizado (R$)",data:realizados,backgroundColor:"rgba(23,162,184,0.7)",borderColor:"#17a2b8",borderWidth:2},\n' +
 '            {label:"Despesas (R$)",data:despesas,backgroundColor:"rgba(253,126,20,0.7)",borderColor:"#fd7e14",borderWidth:2},\n' +
-'            {label:"Desconto (R$)",data:descontos,backgroundColor:"rgba(220,53,69,0.7)",borderColor:"#dc3545",borderWidth:2},\n' +
+'            {label:"Desconto (R$) - base Previsto+Reaj",data:descontos,backgroundColor:"rgba(220,53,69,0.7)",borderColor:"#dc3545",borderWidth:2},\n' +
 '            {label:"Previsto (R$)",data:previstos,backgroundColor:"rgba(108,117,125,0.7)",borderColor:"#6c757d",borderWidth:2}\n' +
 '        ];\n' +
 '    }\n' +
@@ -1953,8 +1959,9 @@ function gerarApresentacao() {
 '        row.insertCell(6).innerHTML = formatarJs(d.reaj);\n' +
 '        row.insertCell(7).innerHTML = formatarJs(d.acumulado);\n' +
 '        row.insertCell(8).innerHTML = formatarJs(d.despesa||0);\n' +
+'        var valorBaseDesc = (valorPrevistoMensal*fator) + d.reaj;\n' +
 '        var descPercent = getDescontoPorNDG(d.ndg || 100);\n' +
-'        var valorDesconto = d.realizado * (descPercent / 100);\n' +
+'        var valorDesconto = valorBaseDesc * (descPercent / 100);\n' +
 '        row.insertCell(9).innerHTML = formatarJs(valorDesconto)+" ("+descPercent+"%)";\n' +
 '        row.insertCell(10).innerHTML = "<span class=\\"badge "+statusCor[d.status]+"\\">"+statusTexto[d.status]+"</span>";\n' +
 '        row.insertCell(11).innerHTML = d.obs||"";\n' +
