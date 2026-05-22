@@ -641,7 +641,7 @@
             <b>ℹ️ INFORMAÇÕES</b><br><br>
             <span>Período: 60 meses (Set/2025 a Ago/2030)</span><br>
             <span style="font-weight:bold;">💰 Valor Previsto por Mês: R$ 1.497.718,70 (fixo)</span><br>
-            <span>📌 Barra de progresso: valor ACUMULADO apenas de medições com status = PAGO (somando PREVISTO + REAJUSTE)</span><br>
+            <span>📌 Barra de progresso: valor ACUMULADO da coluna REALIZADO apenas de medições com status = PAGO</span><br>
             <span>📊 Total de Despesas: soma apenas de medições com status = PAGO</span><br>
             <span>⭐ NDG (Nota de Desempenho): 0-100</span><br>
             <span>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%</span><br>
@@ -673,6 +673,33 @@ var percentuaisEmpresas = {
     EHP: 0.15,
     Prisma: 0.15
 };
+
+// ==================== FUNÇÕES PARA CÁLCULO DA BARRA (SOMA DO REALIZADO ONDE STATUS = PAGO) ====================
+function somarRealizadoPagoAteMedicao(medNum) {
+    var total = 0;
+    for (var i = 0; i < dados.length; i++) {
+        var medAtual = parseInt(dados[i].med);
+        var temDataValida = dados[i].data && dados[i].data !== '' && isDataValida(dados[i].data);
+        var isPago = dados[i].status === 'pago';
+        if (medAtual <= medNum && temDataValida && isPago) {
+            total += dados[i].realizado || 0;
+        }
+    }
+    return total;
+}
+
+function somarRealizadoPagoAteAno(ano) {
+    var ultimaMedNoAno = 0;
+    for (var i = 0; i < dados.length; i++) {
+        var anoMed = parseInt(dados[i].mes.split('/')[1]);
+        var medNum = parseInt(dados[i].med);
+        if (anoMed == ano && medNum > ultimaMedNoAno) {
+            ultimaMedNoAno = medNum;
+        }
+    }
+    return somarRealizadoPagoAteMedicao(ultimaMedNoAno);
+}
+// ============================================================================================================
 
 function setChartType(type) {
     currentChartType = type;
@@ -810,7 +837,7 @@ function toggleEmpresa(botao) {
 }
 
 function atualizarCardsEmpresas() {
-    var totalRealizadoAcumulado = calcularTotalAcumuladoPagoAteMedicao(60);
+    var totalRealizadoAcumulado = somarRealizadoPagoAteMedicao(60);
     
     for (var empresa in percentuaisEmpresas) {
         var valor = totalRealizadoAcumulado * percentuaisEmpresas[empresa];
@@ -826,7 +853,7 @@ function atualizarCardsEmpresas() {
 }
 
 function atualizarTotalSelecionado() {
-    var totalRealizadoAcumulado = calcularTotalAcumuladoPagoAteMedicao(60);
+    var totalRealizadoAcumulado = somarRealizadoPagoAteMedicao(60);
     
     var totalPercentual = 0;
     for (var emp in empresasSelecionadas) {
@@ -1075,24 +1102,26 @@ function atualizarCards(filtrados) {
     var filtroPeriodo = document.getElementById('filtroPeriodo') ? document.getElementById('filtroPeriodo').value : 'todos';
     var filtroAno = document.getElementById('filtroAno') ? document.getElementById('filtroAno').value : 'todos';
     
+    // ========== NOVO CÁLCULO USANDO SOMA DO REALIZADO ONDE STATUS = PAGO ==========
     var totalAcumulado = 0;
     
     if (filtroMedicao !== 'todos') {
         var medNum = parseInt(filtroMedicao);
-        totalAcumulado = calcularTotalAcumuladoPagoAteMedicao(medNum);
+        totalAcumulado = somarRealizadoPagoAteMedicao(medNum);
     } 
     else if (filtroPeriodo !== 'todos') {
         var medNumAteMes = getMedicaoNumByMes(filtroPeriodo);
         if (medNumAteMes) {
-            totalAcumulado = calcularTotalAcumuladoPagoAteMedicao(medNumAteMes);
+            totalAcumulado = somarRealizadoPagoAteMedicao(medNumAteMes);
         }
     }
     else if (filtroAno !== 'todos') {
-        totalAcumulado = calcularTotalAcumuladoPagoAteAno(parseInt(filtroAno));
+        totalAcumulado = somarRealizadoPagoAteAno(parseInt(filtroAno));
     }
     else {
-        totalAcumulado = calcularTotalAcumuladoPagoAteMedicao(60);
+        totalAcumulado = somarRealizadoPagoAteMedicao(60);
     }
+    // ==============================================================================
     
     var fator = calcularFatorEmpresas();
     totalAcumulado = totalAcumulado * fator;
@@ -1470,7 +1499,7 @@ function renderizarTabela(filtrados) {
     
     tbody.innerHTML = '';
     if (filtrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13">Nenhum dado encontrado<\/td><\/tr>';
+        tbody.innerHTML = '<tr><td colspan="13">Nenhum dado encontrado</td></tr>';
         atualizarCards([]);
         return;
     }
@@ -1731,8 +1760,7 @@ function gerarApresentacao() {
     var optionsAnos = '<option value="todos">Todos os Anos</option>';
     for (var i = 0; i < anosUnicos.length; i++) optionsAnos += '<option value="' + anosUnicos[i] + '">' + anosUnicos[i] + '</option>';
     
-    // CORREÇÃO: Modo apresentação agora usa o mesmo tipo de gráfico selecionado
-    var chartTypeToUse = currentChartType; // 'line' ou 'bar'
+    var chartTypeToUse = currentChartType;
     
     var html = '<!DOCTYPE html>\n<html lang="pt-BR">\n<head>\n<meta charset="UTF-8">\n<title>Dashboard - Apresentação</title>\n' +
 '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>\n' +
@@ -1758,7 +1786,7 @@ function gerarApresentacao() {
 '<div class="progress-card"><div class="progress-title"><h2>📈 MEDIÇÃO ACUMULADA</h2><div><span class="total-executado" id="totalExecutadoValor">R$ 0,00</span><span> / R$ 89.863.121,73</span></div></div><div class="progress-bar-container"><div class="progress-bar-fill" id="progressBarFill" style="width:0%;">0%</div></div><div class="progress-stats"><div class="stat-item"><div class="stat-label">Percentual Executado</div><div class="stat-value" id="percExecGrande">0%</div></div><div class="stat-item"><div class="stat-label">Total de Despesas</div><div class="stat-value" id="totalDespGrande">R$ 0,00</div></div><div class="stat-item"><div class="stat-label">Saldo Restante</div><div class="stat-value" id="saldoRestante">R$ 0,00</div></div></div></div>\n' +
 '<div class="graficos-row"><div class="grafico-wrapper"><h3>💰 Evolução Financeira com Área de Despesas</h3><canvas id="graficoFinanceiro"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;">📊 Área laranja = Despesas | Linha vermelha pontilhada = Desconto | Linha azul = Realizado</p></div><div class="grafico-wrapper"><h3>📈 Realizado vs Previsto (Acumulado)</h3><canvas id="graficoAcumulado"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;" id="graficoLegenda">📊 Valores mensais (filtro específico) ou acumulados (visão geral) - Linha pontilhada = apenas PAGO</p></div></div>\n' +
 '<div class="tabela-wrapper"><table id="tabela"><thead><tr><th>Med</th><th>Mês/Ano</th><th>Data</th><th>Previsto</th><th>Realizado</th><th>Diferença</th><th>Reajuste</th><th>Total Acumulado</th><th>Despesas</th><th>Descontos</th><th>Status</th><th>Obs</th></tr></thead><tbody id="tabelaBody"></tbody></table></div>\n' +
-'<div class="info-grid"><div class="info-box"><b>📋 LEGENDA</b><br><span class="badge badge-entregue">Entregue</span> Documentação<br><span class="badge badge-aprovado">Aprovado</span> Fiscalização<br><span class="badge badge-analise">Análise</span> Verificação<br><span class="badge badge-pagamento">Pagamento</span> Financeiro<br><span class="badge badge-pago">Pago</span> Creditado<br><span class="badge badge-nao-iniciado">Não Iniciado</span> Medição não realizada</div><div class="info-box"><b>ℹ️ INFORMAÇÕES</b><br>Período: 60 meses<br>💰 Valor Previsto por Mês: ' + valorPrevistoStr + '<br>📌 Barra: valor ACUMULADO apenas de medições com status PAGO (somando PREVISTO + REAJUSTE)<br>📊 Total de Despesas: soma apenas de medições com status PAGO<br>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%<br>📺 Modo visualização</div></div>\n' +
+'<div class="info-grid"><div class="info-box"><b>📋 LEGENDA</b><br><span class="badge badge-entregue">Entregue</span> Documentação<br><span class="badge badge-aprovado">Aprovado</span> Fiscalização<br><span class="badge badge-analise">Análise</span> Verificação<br><span class="badge badge-pagamento">Pagamento</span> Financeiro<br><span class="badge badge-pago">Pago</span> Creditado<br><span class="badge badge-nao-iniciado">Não Iniciado</span> Medição não realizada</div><div class="info-box"><b>ℹ️ INFORMAÇÕES</b><br>Período: 60 meses<br>💰 Valor Previsto por Mês: ' + valorPrevistoStr + '<br>📌 Barra: soma da coluna REALIZADO apenas de medições com status = PAGO<br>📊 Total de Despesas: soma apenas de medições com status = PAGO<br>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%<br>📺 Modo visualização</div></div>\n' +
 '</div>\n<script>\n' +
 'var dadosOriginais = ' + JSON.stringify(dadosOrdenados) + ';\n' +
 'var totalContrato = ' + totalContrato + ';\n' +
@@ -1775,8 +1803,10 @@ function gerarApresentacao() {
 'function calcularFator(){var t=0;for(var e in empresasSelecionadas)if(empresasSelecionadas[e])t+=percentuais[e];return t===0?1:t;}\n' +
 'function aplicarFator(dados, fator){return dados.map(function(item){var novo=JSON.parse(JSON.stringify(item));novo.reaj*=fator;novo.realizado*=fator;novo.despesa*=fator;novo.acumulado*=fator;return novo;});}\n' +
 'function getMedicaoNumByMes(mesAno){for(var i=0;i<dadosOriginais.length;i++){if(dadosOriginais[i].mes===mesAno){return parseInt(dadosOriginais[i].med);}}return null;}\n' +
-'function calcularTotalAcumuladoPagoAteMedicao(medNum){var total=0;for(var i=0;i<dadosOriginais.length;i++){var medAtual=parseInt(dadosOriginais[i].med);var temDataValida=dadosOriginais[i].data&&dadosOriginais[i].data!==""&&isDataValida(dadosOriginais[i].data);var isPago=dadosOriginais[i].status==="pago";if(medAtual<=medNum&&temDataValida&&isPago){total+=dadosOriginais[i].totalLiq;}}return total;}\n' +
-'function calcularTotalAcumuladoPagoAteAno(ano){var ultimaMedNoAno=0;for(var i=0;i<dadosOriginais.length;i++){var anoMed=parseInt(dadosOriginais[i].mes.split("/")[1]);var medNum=parseInt(dadosOriginais[i].med);if(anoMed==ano&&medNum>ultimaMedNoAno){ultimaMedNoAno=medNum;}}return calcularTotalAcumuladoPagoAteMedicao(ultimaMedNoAno);}\n' +
+'// ========== FUNÇÕES PARA BARRA (SOMA DO REALIZADO ONDE STATUS = PAGO) ==========\n' +
+'function somarRealizadoPagoAteMedicao(medNum){var total=0;for(var i=0;i<dadosOriginais.length;i++){var medAtual=parseInt(dadosOriginais[i].med);var temDataValida=dadosOriginais[i].data&&dadosOriginais[i].data!==""&&isDataValida(dadosOriginais[i].data);var isPago=dadosOriginais[i].status==="pago";if(medAtual<=medNum&&temDataValida&&isPago){total+=dadosOriginais[i].realizado||0;}}return total;}\n' +
+'function somarRealizadoPagoAteAno(ano){var ultimaMedNoAno=0;for(var i=0;i<dadosOriginais.length;i++){var anoMed=parseInt(dadosOriginais[i].mes.split("/")[1]);var medNum=parseInt(dadosOriginais[i].med);if(anoMed==ano&&medNum>ultimaMedNoAno){ultimaMedNoAno=medNum;}}return somarRealizadoPagoAteMedicao(ultimaMedNoAno);}\n' +
+'// ==============================================================================\n' +
 'function atualizarTudo(dadosFiltrados, fatorSelecionado) {\n' +
 '    var stats = {entregue:0, aprovado:0, analise:0, pagamento:0, pago:0, nao_iniciado:0};\n' +
 '    var totalDespesas = 0;\n' +
@@ -1788,15 +1818,17 @@ function gerarApresentacao() {
 '    }\n' +
 '    var filtroPeriodo = document.getElementById("filtroPeriodo") ? document.getElementById("filtroPeriodo").value : "todos";\n' +
 '    var filtroAno = document.getElementById("filtroAno") ? document.getElementById("filtroAno").value : "todos";\n' +
+'    // ========== NOVO CÁLCULO USANDO SOMA DO REALIZADO ONDE STATUS = PAGO ==========\n' +
 '    var totalAcumulado = 0;\n' +
 '    if(filtroPeriodo !== "todos"){\n' +
 '        var medNum = getMedicaoNumByMes(filtroPeriodo);\n' +
-'        if(medNum) totalAcumulado = calcularTotalAcumuladoPagoAteMedicao(medNum) * fatorSelecionado;\n' +
+'        if(medNum) totalAcumulado = somarRealizadoPagoAteMedicao(medNum) * fatorSelecionado;\n' +
 '    } else if(filtroAno !== "todos"){\n' +
-'        totalAcumulado = calcularTotalAcumuladoPagoAteAno(parseInt(filtroAno)) * fatorSelecionado;\n' +
+'        totalAcumulado = somarRealizadoPagoAteAno(parseInt(filtroAno)) * fatorSelecionado;\n' +
 '    } else {\n' +
-'        totalAcumulado = calcularTotalAcumuladoPagoAteMedicao(60) * fatorSelecionado;\n' +
+'        totalAcumulado = somarRealizadoPagoAteMedicao(60) * fatorSelecionado;\n' +
 '    }\n' +
+'    // ==============================================================================\n' +
 '    document.getElementById("totalSelecionado").innerHTML="💰 Total Selecionado: "+formatarJs(totalAcumulado)+" ("+(fatorSelecionado*100).toFixed(1)+"% do Contrato)";\n' +
 '    document.getElementById("totalExecutadoValor").innerHTML=formatarJs(totalAcumulado);\n' +
 '    var perc = totalAcumulado>0?(totalAcumulado/totalContrato*100):0;\n' +
@@ -1805,7 +1837,7 @@ function gerarApresentacao() {
 '    document.getElementById("progressBarFill").innerHTML=perc.toFixed(1)+"%";\n' +
 '    document.getElementById("saldoRestante").innerHTML=formatarJs(totalContrato-totalAcumulado);\n' +
 '    document.getElementById("totalDespGrande").innerHTML=formatarJs(totalDespesas);\n' +
-'    for(var e in percentuais){var el=document.getElementById("valor"+e);if(el)el.innerHTML=empresasSelecionadas[e]?formatarJs(calcularTotalAcumuladoPagoAteMedicao(60)*percentuais[e]):"🔒 "+formatarJs(calcularTotalAcumuladoPagoAteMedicao(60)*percentuais[e]);}\n' +
+'    for(var e in percentuais){var el=document.getElementById("valor"+e);if(el)el.innerHTML=empresasSelecionadas[e]?formatarJs(somarRealizadoPagoAteMedicao(60)*percentuais[e]):"🔒 "+formatarJs(somarRealizadoPagoAteMedicao(60)*percentuais[e]);}\n' +
 '    var total=dadosFiltrados.length;\n' +
 '    var pct=function(v,t){return t?((v/t)*100).toFixed(1)+"%":"0%";};\n' +
 '    document.getElementById("totalEntregue").textContent=stats.entregue;\n' +
