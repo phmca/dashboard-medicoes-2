@@ -573,7 +573,7 @@
                 <div class="stat-value" id="percExecGrande">0%</div>
             </div>
             <div class="stat-item">
-                <div class="stat-label">Total de Despesas</div>
+                <div class="stat-label">Total de Despesas + Descontos</div>
                 <div class="stat-value" id="totalDespGrande">R$ 0,00</div>
             </div>
             <div class="stat-item">
@@ -642,7 +642,7 @@
             <span>Período: 60 meses (Set/2025 a Ago/2030)</span><br>
             <span style="font-weight:bold;">💰 Valor Previsto por Mês: R$ 1.497.718,70 (fixo)</span><br>
             <span>📌 Barra de progresso: valor ACUMULADO da coluna REALIZADO apenas de medições com status = PAGO</span><br>
-            <span>📊 Total de Despesas: soma apenas de medições com status = PAGO</span><br>
+            <span>📊 Total de Despesas + Descontos: soma das despesas + descontos (apenas medições com status = PAGO)</span><br>
             <span>⭐ NDG (Nota de Desempenho): 0-100</span><br>
             <span>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%</span><br>
             <span>🔍 Clique nos cards para filtrar por status</span><br>
@@ -700,6 +700,24 @@ function somarRealizadoPagoAteAno(ano) {
     return somarRealizadoPagoAteMedicao(ultimaMedNoAno);
 }
 // ============================================================================================================
+
+// ==================== FUNÇÕES PARA CÁLCULO DO TOTAL DE DESPESAS + DESCONTOS ====================
+function calcularTotalDespesasMaisDescontos() {
+    var totalDespesas = 0;
+    var totalDescontos = 0;
+    for (var i = 0; i < dados.length; i++) {
+        var temDataValida = dados[i].data && dados[i].data !== '' && isDataValida(dados[i].data);
+        var isPago = dados[i].status === 'pago';
+        if (temDataValida && isPago) {
+            totalDespesas += dados[i].despesa || 0;
+            var descPercent = getDescontoPorNDG(dados[i].ndg || 100);
+            var valorDesconto = (dados[i].realizado || 0) * (descPercent / 100);
+            totalDescontos += valorDesconto;
+        }
+    }
+    return { despesas: totalDespesas, descontos: totalDescontos, total: totalDespesas + totalDescontos };
+}
+// ================================================================================================
 
 function setChartType(type) {
     currentChartType = type;
@@ -1082,11 +1100,15 @@ function salvarTodos() {
 function atualizarCards(filtrados) {
     var stats = {entregue:0, aprovado:0, analise:0, pagamento:0, pago:0, nao_iniciado:0};
     var totalDespesas = 0;
+    var totalDescontos = 0;
     
     for (var i = 0; i < filtrados.length; i++) {
         stats[filtrados[i].status]++;
         if (filtrados[i].status === 'pago') {
             totalDespesas += filtrados[i].despesa || 0;
+            var descPercent = getDescontoPorNDG(filtrados[i].ndg || 100);
+            var valorDesconto = (filtrados[i].realizado || 0) * (descPercent / 100);
+            totalDescontos += valorDesconto;
         }
     }
     
@@ -1096,7 +1118,11 @@ function atualizarCards(filtrados) {
     document.getElementById('totalPagamento').textContent = stats.pagamento;
     document.getElementById('totalPago').textContent = stats.pago;
     document.getElementById('totalNao').textContent = stats.nao_iniciado;
-    document.getElementById('totalDespGrande').innerHTML = formatar(totalDespesas);
+    
+    // Exibe total de despesas + descontos com desconto em parênteses
+    var totalDespesasMaisDescontos = totalDespesas + totalDescontos;
+    document.getElementById('totalDespGrande').innerHTML = formatar(totalDespesasMaisDescontos) + 
+        ' <span style="font-size:12px; opacity:0.8;">(desc: ' + formatar(totalDescontos) + ')</span>';
     
     var filtroMedicao = document.getElementById('filtroMedicao') ? document.getElementById('filtroMedicao').value : 'todos';
     var filtroPeriodo = document.getElementById('filtroPeriodo') ? document.getElementById('filtroPeriodo').value : 'todos';
@@ -1499,7 +1525,7 @@ function renderizarTabela(filtrados) {
     
     tbody.innerHTML = '';
     if (filtrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13">Nenhum dado encontrado</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13">Nenhum dado encontrado</td><\/tr>';
         atualizarCards([]);
         return;
     }
@@ -1783,10 +1809,10 @@ function gerarApresentacao() {
 '<div class="total-selecionado" id="totalSelecionado">💰 Total Selecionado: R$ 0,00 (0% do Contrato)</div>\n' +
 '<div class="kpi-grid" id="kpiGrid"></div>\n' +
 '<div class="filtros"><div class="filtro-group"><label>📅 Mês/Ano:</label><select id="filtroPeriodo" onchange="aplicarFiltros()">' + optionsMeses + '</select></div><div class="filtro-group"><label>📆 Ano:</label><select id="filtroAno" onchange="aplicarFiltros()">' + optionsAnos + '</select></div><div class="filtro-group"><label>🏷️ Status:</label><select id="filtroStatus" onchange="aplicarFiltros()"><option value="todos">Todos</option><option value="entregue">Entregue</option><option value="aprovado">Aprovado</option><option value="analise">Em Análise</option><option value="pagamento">Em Pagamento</option><option value="pago">Pago</option><option value="nao_iniciado">Não Iniciado</option></select></div><button class="btn-clear" onclick="limparFiltros()">🗑️ Limpar Filtros</button></div>\n' +
-'<div class="progress-card"><div class="progress-title"><h2>📈 MEDIÇÃO ACUMULADA</h2><div><span class="total-executado" id="totalExecutadoValor">R$ 0,00</span><span> / R$ 89.863.121,73</span></div></div><div class="progress-bar-container"><div class="progress-bar-fill" id="progressBarFill" style="width:0%;">0%</div></div><div class="progress-stats"><div class="stat-item"><div class="stat-label">Percentual Executado</div><div class="stat-value" id="percExecGrande">0%</div></div><div class="stat-item"><div class="stat-label">Total de Despesas</div><div class="stat-value" id="totalDespGrande">R$ 0,00</div></div><div class="stat-item"><div class="stat-label">Saldo Restante</div><div class="stat-value" id="saldoRestante">R$ 0,00</div></div></div></div>\n' +
+'<div class="progress-card"><div class="progress-title"><h2>📈 MEDIÇÃO ACUMULADA</h2><div><span class="total-executado" id="totalExecutadoValor">R$ 0,00</span><span> / R$ 89.863.121,73</span></div></div><div class="progress-bar-container"><div class="progress-bar-fill" id="progressBarFill" style="width:0%;">0%</div></div><div class="progress-stats"><div class="stat-item"><div class="stat-label">Percentual Executado</div><div class="stat-value" id="percExecGrande">0%</div></div><div class="stat-item"><div class="stat-label">Total de Despesas + Descontos</div><div class="stat-value" id="totalDespGrande">R$ 0,00</div></div><div class="stat-item"><div class="stat-label">Saldo Restante</div><div class="stat-value" id="saldoRestante">R$ 0,00</div></div></div></div>\n' +
 '<div class="graficos-row"><div class="grafico-wrapper"><h3>💰 Evolução Financeira com Área de Despesas</h3><canvas id="graficoFinanceiro"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;">📊 Área laranja = Despesas | Linha vermelha pontilhada = Desconto | Linha azul = Realizado</p></div><div class="grafico-wrapper"><h3>📈 Realizado vs Previsto (Acumulado)</h3><canvas id="graficoAcumulado"></canvas><p style="text-align:center; font-size:11px; color:#666; margin-top:10px;" id="graficoLegenda">📊 Valores mensais (filtro específico) ou acumulados (visão geral) - Linha pontilhada = apenas PAGO</p></div></div>\n' +
 '<div class="tabela-wrapper"><table id="tabela"><thead><tr><th>Med</th><th>Mês/Ano</th><th>Data</th><th>Previsto</th><th>Realizado</th><th>Diferença</th><th>Reajuste</th><th>Total Acumulado</th><th>Despesas</th><th>Descontos</th><th>Status</th><th>Obs</th></tr></thead><tbody id="tabelaBody"></tbody></table></div>\n' +
-'<div class="info-grid"><div class="info-box"><b>📋 LEGENDA</b><br><span class="badge badge-entregue">Entregue</span> Documentação<br><span class="badge badge-aprovado">Aprovado</span> Fiscalização<br><span class="badge badge-analise">Análise</span> Verificação<br><span class="badge badge-pagamento">Pagamento</span> Financeiro<br><span class="badge badge-pago">Pago</span> Creditado<br><span class="badge badge-nao-iniciado">Não Iniciado</span> Medição não realizada</div><div class="info-box"><b>ℹ️ INFORMAÇÕES</b><br>Período: 60 meses<br>💰 Valor Previsto por Mês: ' + valorPrevistoStr + '<br>📌 Barra: soma da coluna REALIZADO apenas de medições com status = PAGO<br>📊 Total de Despesas: soma apenas de medições com status = PAGO<br>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%<br>📺 Modo visualização</div></div>\n' +
+'<div class="info-grid"><div class="info-box"><b>📋 LEGENDA</b><br><span class="badge badge-entregue">Entregue</span> Documentação<br><span class="badge badge-aprovado">Aprovado</span> Fiscalização<br><span class="badge badge-analise">Análise</span> Verificação<br><span class="badge badge-pagamento">Pagamento</span> Financeiro<br><span class="badge badge-pago">Pago</span> Creditado<br><span class="badge badge-nao-iniciado">Não Iniciado</span> Medição não realizada</div><div class="info-box"><b>ℹ️ INFORMAÇÕES</b><br>Período: 60 meses<br>💰 Valor Previsto por Mês: ' + valorPrevistoStr + '<br>📌 Barra: soma da coluna REALIZADO apenas de medições com status = PAGO<br>📊 Total de Despesas + Descontos: soma das despesas + descontos (apenas medições com status = PAGO)<br>🎯 Desconto: ≥90=0% | 80-89=2,5% | 70-79=5% | 50-69=7,5% | &lt;50=10%<br>📺 Modo visualização</div></div>\n' +
 '</div>\n<script>\n' +
 'var dadosOriginais = ' + JSON.stringify(dadosOrdenados) + ';\n' +
 'var totalContrato = ' + totalContrato + ';\n' +
@@ -1810,10 +1836,14 @@ function gerarApresentacao() {
 'function atualizarTudo(dadosFiltrados, fatorSelecionado) {\n' +
 '    var stats = {entregue:0, aprovado:0, analise:0, pagamento:0, pago:0, nao_iniciado:0};\n' +
 '    var totalDespesas = 0;\n' +
+'    var totalDescontos = 0;\n' +
 '    for(var i=0;i<dadosFiltrados.length;i++){\n' +
 '        stats[dadosFiltrados[i].status]++;\n' +
 '        if(dadosFiltrados[i].status === "pago"){\n' +
 '            totalDespesas += dadosFiltrados[i].despesa||0;\n' +
+'            var descPercent = getDescontoPorNDG(dadosFiltrados[i].ndg || 100);\n' +
+'            var valorDesconto = (dadosFiltrados[i].realizado || 0) * (descPercent / 100);\n' +
+'            totalDescontos += valorDesconto;\n' +
 '        }\n' +
 '    }\n' +
 '    var filtroPeriodo = document.getElementById("filtroPeriodo") ? document.getElementById("filtroPeriodo").value : "todos";\n' +
@@ -1836,7 +1866,9 @@ function gerarApresentacao() {
 '    document.getElementById("progressBarFill").style.width=perc+"%";\n' +
 '    document.getElementById("progressBarFill").innerHTML=perc.toFixed(1)+"%";\n' +
 '    document.getElementById("saldoRestante").innerHTML=formatarJs(totalContrato-totalAcumulado);\n' +
-'    document.getElementById("totalDespGrande").innerHTML=formatarJs(totalDespesas);\n' +
+'    // Exibe total de despesas + descontos com desconto em parênteses\n' +
+'    var totalDespesasMaisDescontos = totalDespesas + totalDescontos;\n' +
+'    document.getElementById("totalDespGrande").innerHTML = formatarJs(totalDespesasMaisDescontos) + \' <span style="font-size:12px; opacity:0.8;">(desc: \' + formatarJs(totalDescontos) + \')</span>\';\n' +
 '    for(var e in percentuais){var el=document.getElementById("valor"+e);if(el)el.innerHTML=empresasSelecionadas[e]?formatarJs(somarRealizadoPagoAteMedicao(60)*percentuais[e]):"🔒 "+formatarJs(somarRealizadoPagoAteMedicao(60)*percentuais[e]);}\n' +
 '    var total=dadosFiltrados.length;\n' +
 '    var pct=function(v,t){return t?((v/t)*100).toFixed(1)+"%":"0%";};\n' +
